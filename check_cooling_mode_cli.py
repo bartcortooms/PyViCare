@@ -1,34 +1,28 @@
 """
-Viessmann Cooling Mode Check CLI using PyViCare.
+Viessmann Cooling Mode Check CLI using PyViCare with Direct API Token.
 
 This script checks if any connected Viessmann heating devices are currently
-in a cooling mode. It uses PyViCare to interact with the Viessmann API.
+in a cooling mode. It uses PyViCare to interact with the Viessmann API,
+authenticating with a directly provided API token.
 
 Prerequisites:
 - Python 3.x
 - PyViCare library: pip install PyViCare
-- Environment variables for authentication:
-    - VICARE_EMAIL: Your Viessmann account email.
-    - VICARE_PASSWORD: Your Viessmann account password.
-    - VICARE_CLIENT_ID: (Optional) Your Viessmann API client ID.
-                       Defaults to PyViCare's standard client ID if not set.
-                       The default is usually: '1c681a9cfa03a0fe940f4fcfU6caCd8'
-    - VICARE_TOKEN_FILE: (Optional) Path to store/load the OAuth token.
-                         Defaults to 'vicare_token.save' in the current directory.
-                         Can be overridden by the --token_file argument.
+- Dependencies for PyViCare (e.g., requests, authlib)
+- Environment variables / Command-line arguments:
+    - VICARE_API_TOKEN (or --api-token): Your Viessmann API access token. (Required)
+    - VICARE_CLIENT_ID (or --client-id): (Optional) Your Viessmann API client ID.
+                                       Defaults to PyViCare's standard client ID if not set
+                                       ('1c681a9cfa03a0fe940f4fcfU6caCd8').
     - VICARE_DEBUG_LIB: (Optional) Set to 'true' to enable verbose logging
                         from PyViCare and underlying libraries. Defaults to 'false'.
 
-
 Usage:
-    python check_cooling_mode_cli.py [OPTIONS]
-
-Options:
-    -h, --help          Show this help message and exit.
-    --token_file TOKEN_FILE
-                        Path to the Viessmann API token file.
-                        Overrides VICARE_TOKEN_FILE env var if set.
-                        Default: vicare_token.save
+    python check_cooling_mode_cli.py --api-token YOUR_TOKEN_HERE [--client-id YOUR_CLIENT_ID_HERE]
+Or (using environment variables):
+    export VICARE_API_TOKEN="YOUR_TOKEN_HERE"
+    export VICARE_CLIENT_ID="YOUR_CLIENT_ID_HERE" # Optional, defaults if not set
+    python check_cooling_mode_cli.py
 """
 import os
 import sys
@@ -37,6 +31,9 @@ import argparse
 import requests
 from PyViCare.PyViCare import PyViCare
 from PyViCare.PyViCareUtils import PyViCareNotSupportedFeatureError, PyViCareRateLimitError
+from PyViCare.PyViCareAbstractOAuthManager import AbstractViCareOAuthManager
+from authlib.integrations.requests_client import OAuth2Session
+
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -55,44 +52,67 @@ KNOWN_COOLING_PROGRAMS = [
     "ecoCooling", "cooling"
 ]
 
+class TokenAuthOAuthManager(AbstractViCareOAuthManager):
+    def __init__(self, raw_api_token: str, client_id: str):
+        """
+        OAuthManager that uses a pre-existing raw API token.
+        Token renewal is not supported with this manager.
+        """
+        if not raw_api_token:
+            raise ValueError("API token cannot be empty.")
+        if not client_id:
+            raise ValueError("Client ID cannot be empty for OAuth2Session.")
 
-def initialize_vicare(token_file_path):
-    """
-    Initializes the PyViCare instance using credentials from environment variables
-    and the provided token file path.
-    """
-    client_id = os.getenv('VICARE_CLIENT_ID', '1c681a9cfa03a0fe940f4fcfU6caCd8')
-    email = os.getenv('VICARE_EMAIL')
-    password = os.getenv('VICARE_PASSWORD')
+        token_dict = {
+            'access_token': raw_api_token,
+            'token_type': 'Bearer',
+        }
 
-    if not email or not password:
-        logger.error("VICARE_EMAIL and VICARE_PASSWORD environment variables must be set.")
+        oauth_session = OAuth2Session(client_id=client_id, token=token_dict)
+
+        super().__init__(oauth_session)
+        logger.info("Initialized TokenAuthOAuthManager with provided API token.")
+
+    def renewToken(self) -> None:
+        """
+        Token renewal is not supported when using a static API token.
+        """
+        logger.error("Static API token has expired or is invalid. Token renewal is not supported in this mode.")
+        raise RuntimeError("API token expired and renewal is not supported with static token authentication.")
+
+
+def initialize_vicare(api_token_str: str, client_id_str: str):
+    logger.info("Initializing PyViCare with API Token...")
+
+    if not api_token_str: # Should be caught by argparse, but as a safeguard
+        logger.error("API Token (from --api-token or VICARE_API_TOKEN) must be provided.")
         sys.exit(1)
+
+    # Use provided client_id_str or default if it's empty or None.
+    # The default for --client-id in argparse is already the PyViCare default,
+    # so client_id_str here should always have a value.
+    final_client_id = client_id_str
+    if not client_id_str: # Should not happen if argparse default is set correctly
+        logger.warning(f"Client ID was empty, using PyViCare default: 1c681a9cfa03a0fe940f4fcfU6caCd8")
+        final_client_id = '1c681a9cfa03a0fe940f4fcfU6caCd8'
+
 
     try:
-        logger.info("Attempting to initialize PyViCare...")
-        vicare = PyViCare()
-        vicare.setCacheDuration(60)
-        logger.info(f"Using Client ID: {client_id}")
-        logger.info(f"Using Email: {email.split('@')[0]}@...")
-        logger.info(f"Using Token File: {token_file_path}")
-        logger.info("Initializing with credentials...")
-        vicare.initWithCredentials(email, password, client_id, token_file_path)
-        logger.info("Successfully initialized PyViCare and authenticated.")
+        logger.info(f"Using Client ID: {final_client_id}")
+        logger.info(f"Using API Token: {api_token_str[:5]}...{api_token_str[-5:]}") # Mask token
+        token_oauth_manager = TokenAuthOAuthManager(raw_api_token=api_token_str, client_id=final_client_id)
+        vicare = PyViCare(oauth_manager=token_oauth_manager)
+        # vicare.setCacheDuration(60) # Optional: re-add if desired for specific use cases
+        logger.info("Successfully initialized PyViCare with token-based authentication.")
         return vicare
-    except PyViCareRateLimitError as e:
-        logger.error(f"PyViCare Rate Limit Error during initialization: {e}")
-        print(f"\nERROR: Viessmann API rate limit was hit during initialization. Please try again later. Details: {e}")
-        sys.exit(1)
     except Exception as e:
-        logger.error(f"Error during PyViCare initialization or authentication: {e}", exc_info=True)
-        print(f"\nERROR: Failed to initialize PyViCare. Details: {e}")
+        logger.error(f"Error during PyViCare initialization with API token: {e}", exc_info=True)
         sys.exit(1)
+
 
 def discover_devices(vicare_instance):
     """
     Discovers and creates full Device objects from the PyViCare instance.
-    May raise PyViCareRateLimitError or other requests.exceptions if API calls fail.
     """
     if not vicare_instance or not hasattr(vicare_instance, 'devices') or not vicare_instance.devices:
         logger.warning("No devices found in PyViCare instance or instance is not valid.")
@@ -117,7 +137,6 @@ def discover_devices(vicare_instance):
 def check_devices_for_cooling(devices_list):
     """
     Checks each device and its circuits for active cooling modes or programs.
-    May raise PyViCareRateLimitError or other requests.exceptions if API calls fail.
     """
     cooling_devices_found = []
     if not devices_list:
@@ -198,33 +217,40 @@ def main():
     Main execution function for the Viessmann Cooling Mode Check CLI.
     """
     parser = argparse.ArgumentParser(
-        description="Viessmann Cooling Mode Check CLI using PyViCare.",
+        description="Check Viessmann devices for cooling mode using PyViCare and a direct API token.",
         epilog="""
 Prerequisites:
-- Python 3.x
-- PyViCare library: pip install PyViCare
-- Environment variables for authentication:
-    - VICARE_EMAIL: Your Viessmann account email.
-    - VICARE_PASSWORD: Your Viessmann account password.
-    - VICARE_CLIENT_ID: (Optional) Your Viessmann API client ID.
-                       Defaults to PyViCare's standard client ID.
-    - VICARE_TOKEN_FILE: (Optional) Path to store/load the OAuth token.
-                         Default can be set by --token_file.
+- Python 3.x, PyViCare library (pip install PyViCare)
+- Environment variables / Command-line arguments:
+    - VICARE_API_TOKEN (or --api-token): Your Viessmann API access token. (Required)
+    - VICARE_CLIENT_ID (or --client-id): (Optional) Your Viessmann API client ID.
+                                       Defaults to PyViCare's standard client ID.
     - VICARE_DEBUG_LIB: (Optional) Set to 'true' for verbose PyViCare logs.
 """,
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument(
-        "--token_file",
+        "--api-token",
         type=str,
-        default=os.getenv('VICARE_TOKEN_FILE', "vicare_token.save"),
-        help="Path to the Viessmann API token file.\n"
-             "Overrides VICARE_TOKEN_FILE env var if set.\n"
-             "Default: vicare_token.save"
+        default=os.getenv('VICARE_API_TOKEN'),
+        # required=os.getenv('VICARE_API_TOKEN') is None, # Logic for this is handled explicitly below
+        help="Viessmann API Token. Can also be set via VICARE_API_TOKEN environment variable."
+    )
+    parser.add_argument(
+        "--client-id",
+        type=str,
+        default=os.getenv('VICARE_CLIENT_ID', '1c681a9cfa03a0fe940f4fcfU6caCd8'),
+        help="Viessmann API Client ID. Can also be set via VICARE_CLIENT_ID. "
+             "Defaults to PyViCare standard ID ('1c681a9cfa03a0fe940f4fcfU6caCd8')."
     )
     args = parser.parse_args()
 
-    logger.info("Starting Viessmann Cooling Mode Check CLI...")
+    if not args.api_token:
+        logger.error("--api-token (or VICARE_API_TOKEN environment variable) is required.")
+        parser.print_help()
+        sys.exit(1)
+
+    logger.info("Starting Viessmann Cooling Mode Check CLI (Token Auth)...")
 
     debug_vicare_library = os.getenv('VICARE_DEBUG_LIB', 'False').lower() == 'true'
     if not debug_vicare_library:
@@ -236,7 +262,7 @@ Prerequisites:
 
     vicare_instance = None
     try:
-        vicare_instance = initialize_vicare(args.token_file)
+        vicare_instance = initialize_vicare(args.api_token, args.client_id)
 
         logger.info("PyViCare instance created. Discovering devices...")
         devices = discover_devices(vicare_instance)
@@ -269,7 +295,7 @@ Prerequisites:
             logger.warning("No devices were successfully processed or found in the installation.")
             print("""
 No Viessmann devices were found or processed.
-Ensure your installation is accessible and credentials (VICARE_EMAIL, VICARE_PASSWORD) are correct and set as environment variables.
+Ensure your installation is accessible and the API token is correct.
 """)
 
     except PyViCareRateLimitError as e:
