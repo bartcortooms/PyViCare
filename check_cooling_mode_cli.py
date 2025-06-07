@@ -34,6 +34,7 @@ import os
 import sys
 import logging
 import argparse
+import requests # Added import
 from PyViCare.PyViCare import PyViCare
 from PyViCare.PyViCareUtils import PyViCareNotSupportedFeatureError, PyViCareRateLimitError
 
