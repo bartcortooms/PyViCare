@@ -34,7 +34,7 @@ import os
 import sys
 import logging
 import argparse
-import requests # Added import
+import requests
 from PyViCare.PyViCare import PyViCare
 from PyViCare.PyViCareUtils import PyViCareNotSupportedFeatureError, PyViCareRateLimitError
 
@@ -69,9 +69,6 @@ def initialize_vicare(token_file_path):
         logger.error("VICARE_EMAIL and VICARE_PASSWORD environment variables must be set.")
         sys.exit(1)
 
-    # This try-except is for initWithCredentials specific errors.
-    # Higher level errors (network, etc.) during API calls within PyViCare
-    # will be caught by the main try-except block or by specific checks in calling functions.
     try:
         logger.info("Attempting to initialize PyViCare...")
         vicare = PyViCare()
@@ -83,11 +80,11 @@ def initialize_vicare(token_file_path):
         vicare.initWithCredentials(email, password, client_id, token_file_path)
         logger.info("Successfully initialized PyViCare and authenticated.")
         return vicare
-    except PyViCareRateLimitError as e: # Catch rate limit during init itself
+    except PyViCareRateLimitError as e:
         logger.error(f"PyViCare Rate Limit Error during initialization: {e}")
         print(f"\nERROR: Viessmann API rate limit was hit during initialization. Please try again later. Details: {e}")
         sys.exit(1)
-    except Exception as e: # Catch other errors during init
+    except Exception as e:
         logger.error(f"Error during PyViCare initialization or authentication: {e}", exc_info=True)
         print(f"\nERROR: Failed to initialize PyViCare. Details: {e}")
         sys.exit(1)
@@ -107,15 +104,13 @@ def discover_devices(vicare_instance):
     for device_config in vicare_instance.devices:
         try:
             logger.info(f"Processing device config: ID {device_config.id}, Type: {device_config.device_type}")
-            # This .service call can trigger API requests and thus errors
             device = device_config.service
             logger.info(f"Successfully created Device object: {device.getModel()} (ID: {device_config.id}, Type: {type(device).__name__})")
             all_devices.append(device)
-        except PyViCareRateLimitError: # Re-raise to be caught by main handler
+        except PyViCareRateLimitError:
             raise
         except Exception as e:
             logger.error(f"Error creating full Device object for ID {device_config.id} (Type: {device_config.device_type}): {e}", exc_info=True)
-            # Optionally, continue to try other devices or re-raise
 
     return all_devices
 
@@ -165,7 +160,7 @@ def check_devices_for_cooling(devices_list):
                         cooling_detected_for_circuit = True
                 except PyViCareNotSupportedFeatureError:
                     logger.info(f"    Active mode feature not supported for {circuit_name} on {device.getModel()}.")
-                except PyViCareRateLimitError: raise # Re-raise
+                except PyViCareRateLimitError: raise
                 except Exception as e:
                     logger.error(f"    Error getting active mode for {circuit_name} on {device.getModel()}: {e}", exc_info=True)
 
@@ -184,7 +179,7 @@ def check_devices_for_cooling(devices_list):
                             })
                     except PyViCareNotSupportedFeatureError:
                         logger.info(f"    Active program feature not supported for {circuit_name} on {device.getModel()}.")
-                    except PyViCareRateLimitError: raise # Re-raise
+                    except PyViCareRateLimitError: raise
                     except Exception as e:
                         logger.error(f"    Error getting active program for {circuit_name} on {device.getModel()}: {e}", exc_info=True)
 
@@ -192,13 +187,16 @@ def check_devices_for_cooling(devices_list):
             logger.info(f"  Device {device.getModel()} does not support circuits or related features needed for cooling check at device level.")
         except AttributeError as e:
              logger.info(f"  Device {device.getModel()} appears to be missing the 'circuits' attribute: {e}")
-        except PyViCareRateLimitError: raise # Re-raise from device-level processing
+        except PyViCareRateLimitError: raise
         except Exception as e:
             logger.error(f"  An error occurred while processing device {device.getModel()}: {e}", exc_info=True)
 
     return cooling_devices_found
 
-if __name__ == "__main__":
+def main():
+    """
+    Main execution function for the Viessmann Cooling Mode Check CLI.
+    """
     parser = argparse.ArgumentParser(
         description="Viessmann Cooling Mode Check CLI using PyViCare.",
         epilog="""
@@ -236,20 +234,17 @@ Prerequisites:
         logging.getLogger("oauthlib").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    vicare_instance = None # Ensure defined for the finally block if init fails early
+    vicare_instance = None
     try:
         vicare_instance = initialize_vicare(args.token_file)
 
-        # initialize_vicare sys.exits on failure, so no need for 'if vicare_instance:' here
-        # as the script would have already exited.
-
         logger.info("PyViCare instance created. Discovering devices...")
-        devices = discover_devices(vicare_instance) # Can raise PyViCareRateLimitError
+        devices = discover_devices(vicare_instance)
 
         if devices:
             logger.info(f"Successfully discovered {len(devices)} device object(s).")
             logger.info("Checking for cooling mode...")
-            cooling_info = check_devices_for_cooling(devices) # Can raise PyViCareRateLimitError
+            cooling_info = check_devices_for_cooling(devices)
 
             if cooling_info:
                 logger.warning("--- COOLING MODE DETECTED ---")
@@ -278,10 +273,10 @@ Ensure your installation is accessible and credentials (VICARE_EMAIL, VICARE_PAS
 """)
 
     except PyViCareRateLimitError as e:
-        logger.error(f"Viessmann API rate limit was hit: {e}", exc_info=True) # exc_info for context
+        logger.error(f"Viessmann API rate limit was hit: {e}", exc_info=True)
         print(f"\nERROR: Viessmann API rate limit was hit. Please try again later. Details: {e}")
         sys.exit(1)
-    except requests.exceptions.ConnectionError as e: # Catch requests' base ConnectionError
+    except requests.exceptions.ConnectionError as e:
         logger.error(f"A connection error occurred: {e}", exc_info=True)
         print(f"\nERROR: A network connection error occurred. Please check your internet connection. Details: {e}")
         sys.exit(1)
@@ -291,3 +286,6 @@ Ensure your installation is accessible and credentials (VICARE_EMAIL, VICARE_PAS
         sys.exit(1)
     finally:
         logger.info("Cooling mode check finished.")
+
+if __name__ == "__main__":
+    main()
