@@ -136,7 +136,7 @@ def discover_devices(vicare_instance):
     for device_config in vicare_instance.devices:
         try:
             logger.info(f"Processing PyViCareDeviceConfig: device_id {device_config.device_id}, device_model: {device_config.device_model}, status: {device_config.status}")
-            device = device_config.service
+            device = device_config.asAutoDetectDevice()
             logger.info(f"Successfully created Device object: {device.getModel()} (Type: {type(device).__name__}), from device_id: {device_config.device_id}")
             all_devices.append(device)
         except PyViCareRateLimitError:
