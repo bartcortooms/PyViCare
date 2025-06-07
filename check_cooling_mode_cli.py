@@ -132,37 +132,42 @@ def discover_devices(vicare_instance):
 
     logger.info(f"Found {len(vicare_instance.devices)} device configuration(s) in the installation.")
 
-    all_devices = []
+    all_devices_info = [] # Renamed and will store tuples
+    if not vicare_instance.devices: # check if devices list is empty
+        logger.warning("No device configurations reported by PyViCare instance.")
+        return all_devices_info
+
     for device_config in vicare_instance.devices:
+        logger.info(f"Processing PyViCareDeviceConfig: device_id {device_config.device_id}, device_model: {device_config.device_model}, status: {device_config.status}")
         try:
-            logger.info(f"Processing PyViCareDeviceConfig: device_id {device_config.device_id}, device_model: {device_config.device_model}, status: {device_config.status}")
             device = device_config.asAutoDetectDevice()
             logger.info(f"Successfully created Device object of type: {type(device).__name__} (Model: {device_config.device_model}), from device_id: {device_config.device_id}")
-            all_devices.append(device)
+            all_devices_info.append((device, device_config.device_model)) # Append tuple
         except PyViCareRateLimitError:
             raise
         except Exception as e:
             logger.error(f"Error creating full Device object from PyViCareDeviceConfig (device_id: {device_config.device_id}, device_model: {device_config.device_model}): {e}", exc_info=True)
 
-    return all_devices
+    return all_devices_info
 
-def check_devices_for_cooling(devices_list):
+def check_devices_for_cooling(devices_list_with_models): # Parameter name updated
     """
     Checks each device and its circuits for active cooling modes or programs.
+    devices_list_with_models is a list of tuples: (device_object, device_model_string)
     """
     cooling_devices_found = []
-    if not devices_list:
+    if not devices_list_with_models: # Updated variable name
         logger.info("No devices to check for cooling mode.")
         return cooling_devices_found
 
     normalized_known_cooling_modes = [m.lower() for m in KNOWN_COOLING_MODES]
     normalized_known_cooling_programs = [p.lower() for p in KNOWN_COOLING_PROGRAMS]
 
-    for device in devices_list:
-        logger.info(f"Checking device: {device.getModel()} (Type: {type(device).__name__})")
+    for device, device_model_str in devices_list_with_models: # Unpack tuple
+        logger.info(f"Checking device: {device_model_str} (Type: {type(device).__name__})") # Use device_model_str
         try:
             if not hasattr(device, 'circuits') or not device.circuits:
-                logger.info(f"  Device {device.getModel()} has no circuits to check or 'circuits' attribute is missing.")
+                logger.info(f"  Device {device_model_str} has no circuits to check or 'circuits' attribute is missing.") # Use device_model_str
                 continue
 
             for i, circuit in enumerate(device.circuits):
@@ -173,16 +178,16 @@ def check_devices_for_cooling(devices_list):
                 except Exception:
                     pass
 
-                logger.info(f"  Checking {circuit_name} of {device.getModel()}...")
+                logger.info(f"  Checking {circuit_name} of {device_model_str}...") # Use device_model_str
                 cooling_detected_for_circuit = False
 
                 try:
                     active_mode = circuit.getActiveMode()
                     logger.info(f"    Active mode for {circuit_name}: '{active_mode}'")
                     if active_mode and active_mode.lower() in normalized_known_cooling_modes:
-                        logger.warning(f"    COOLING DETECTED for {device.getModel()} [{circuit_name}] via active mode: {active_mode}")
+                        logger.warning(f"    COOLING DETECTED for {device_model_str} [{circuit_name}] via active mode: {active_mode}") # Use device_model_str
                         cooling_devices_found.append({
-                            "device_model": device.getModel(),
+                            "device_model": device_model_str, # Use device_model_str
                             "device_type": type(device).__name__,
                             "circuit": circuit_name,
                             "detected_by": "active_mode",
@@ -190,37 +195,37 @@ def check_devices_for_cooling(devices_list):
                         })
                         cooling_detected_for_circuit = True
                 except PyViCareNotSupportedFeatureError:
-                    logger.info(f"    Active mode feature not supported for {circuit_name} on {device.getModel()}.")
+                    logger.info(f"    Active mode feature not supported for {circuit_name} on {device_model_str}.") # Use device_model_str
                 except PyViCareRateLimitError: raise
                 except Exception as e:
-                    logger.error(f"    Error getting active mode for {circuit_name} on {device.getModel()}: {e}", exc_info=True)
+                    logger.error(f"    Error getting active mode for {circuit_name} on {device_model_str}: {e}", exc_info=True) # Use device_model_str
 
                 if not cooling_detected_for_circuit:
                     try:
                         active_program = circuit.getActiveProgram()
                         logger.info(f"    Active program for {circuit_name}: '{active_program}'")
                         if active_program and active_program.lower() in normalized_known_cooling_programs:
-                            logger.warning(f"    COOLING DETECTED for {device.getModel()} [{circuit_name}] via active program: {active_program}")
+                            logger.warning(f"    COOLING DETECTED for {device_model_str} [{circuit_name}] via active program: {active_program}") # Use device_model_str
                             cooling_devices_found.append({
-                                "device_model": device.getModel(),
+                                "device_model": device_model_str, # Use device_model_str
                                 "device_type": type(device).__name__,
                                 "circuit": circuit_name,
                                 "detected_by": "active_program",
                                 "value": active_program
                             })
                     except PyViCareNotSupportedFeatureError:
-                        logger.info(f"    Active program feature not supported for {circuit_name} on {device.getModel()}.")
+                        logger.info(f"    Active program feature not supported for {circuit_name} on {device_model_str}.") # Use device_model_str
                     except PyViCareRateLimitError: raise
                     except Exception as e:
-                        logger.error(f"    Error getting active program for {circuit_name} on {device.getModel()}: {e}", exc_info=True)
+                        logger.error(f"    Error getting active program for {circuit_name} on {device_model_str}: {e}", exc_info=True) # Use device_model_str
 
         except PyViCareNotSupportedFeatureError:
-            logger.info(f"  Device {device.getModel()} does not support circuits or related features needed for cooling check at device level.")
+            logger.info(f"  Device {device_model_str} does not support circuits or related features needed for cooling check at device level.") # Use device_model_str
         except AttributeError as e:
-             logger.info(f"  Device {device.getModel()} appears to be missing the 'circuits' attribute: {e}")
+             logger.info(f"  Device {device_model_str} appears to be missing the 'circuits' attribute: {e}") # Use device_model_str
         except PyViCareRateLimitError: raise
         except Exception as e:
-            logger.error(f"  An error occurred while processing device {device.getModel()}: {e}", exc_info=True)
+            logger.error(f"  An error occurred while processing device {device_model_str}: {e}", exc_info=True) # Use device_model_str
 
     return cooling_devices_found
 
