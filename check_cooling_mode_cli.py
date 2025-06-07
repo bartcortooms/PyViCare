@@ -135,14 +135,14 @@ def discover_devices(vicare_instance):
     all_devices = []
     for device_config in vicare_instance.devices:
         try:
-            logger.info(f"Processing device config: ID {device_config.id}, Type: {device_config.device_type}")
+            logger.info(f"Processing PyViCareDeviceConfig: device_id {device_config.device_id}, model_id: {device_config.model_id}, status: {device_config.status}")
             device = device_config.service
-            logger.info(f"Successfully created Device object: {device.getModel()} (ID: {device_config.id}, Type: {type(device).__name__})")
+            logger.info(f"Successfully created Device object: {device.getModel()} (Type: {type(device).__name__}), from device_id: {device_config.device_id}")
             all_devices.append(device)
         except PyViCareRateLimitError:
             raise
         except Exception as e:
-            logger.error(f"Error creating full Device object for ID {device_config.id} (Type: {device_config.device_type}): {e}", exc_info=True)
+            logger.error(f"Error creating full Device object from PyViCareDeviceConfig (device_id: {device_config.device_id}, model_id: {device_config.model_id}): {e}", exc_info=True)
 
     return all_devices
 
