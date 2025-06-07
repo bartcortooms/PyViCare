@@ -100,10 +100,22 @@ def initialize_vicare(api_token_str: str, client_id_str: str):
     try:
         logger.info(f"Using Client ID: {final_client_id}")
         logger.info(f"Using API Token: {api_token_str[:5]}...{api_token_str[-5:]}") # Mask token
+
+        # 1. Instantiate the custom OAuth manager
         token_oauth_manager = TokenAuthOAuthManager(raw_api_token=api_token_str, client_id=final_client_id)
-        vicare = PyViCare(oauth_manager=token_oauth_manager)
-        # vicare.setCacheDuration(60) # Optional: re-add if desired for specific use cases
-        logger.info("Successfully initialized PyViCare with token-based authentication.")
+
+        # 2. Instantiate PyViCare (no arguments in constructor)
+        vicare = PyViCare()
+
+        # 3. Initialize PyViCare with the custom OAuth manager
+        vicare.initWithExternalOAuth(oauth_manager=token_oauth_manager)
+
+        # 4. Optionally set cache duration (if desired)
+        # vicare.setCacheDuration(60) # Default is 0 (no cache), or 60 if you use initWithCredentials
+                                     # For direct token, caching might be less critical or handled differently.
+                                     # Let's keep it commented out for now unless deemed necessary.
+
+        logger.info("Successfully initialized PyViCare with token-based authentication using initWithExternalOAuth.")
         return vicare
     except Exception as e:
         logger.error(f"Error during PyViCare initialization with API token: {e}", exc_info=True)
