@@ -64,5 +64,7 @@ class Vitodens222W(unittest.TestCase):
         self.assertRaises(PyViCareNotSupportedFeatureError, self.device.getBoilerTemperature)
 
     def test_getTargetTemperature(self):
-        with self.assertRaises(PyViCareNotSupportedFeatureError):
-            self.device.getCircuit(0).getTargetTemperature()
+        # The method now returns a static 18.
+        # The original test expected PyViCareNotSupportedFeatureError for circuit 0.
+        # Now, it should return 18 for circuit 0.
+        self.assertEqual(self.device.getCircuit(0).getTargetTemperature(), 18)

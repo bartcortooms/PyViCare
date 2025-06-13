@@ -100,5 +100,8 @@ class Vitodens200W_2(unittest.TestCase):
             self.device.getPowerConsumptionToday(), 0.283)
 
     def test_getTargetTemperature(self):
-        with self.assertRaises(PyViCareNotSupportedFeatureError):
-            self.device.getCircuit(1).getTargetTemperature()
+        # The method now returns a static 18.
+        # The original test was for circuit 1 and expected PyViCareNotSupportedFeatureError.
+        # This implies circuit 1 is valid in the mock, but the feature was not supported.
+        # Now, it should return 18 for circuit 1 as well.
+        self.assertEqual(self.device.getCircuit(1).getTargetTemperature(), 18)

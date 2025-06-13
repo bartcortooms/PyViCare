@@ -55,4 +55,4 @@ class Vitocal222S(unittest.TestCase):
         self.assertEqual(self.device.getVentilationQuickmodes(), [])
 
     def test_getTargetTemperature(self):
-        self.assertEqual(self.device.getCircuit(0).getTargetTemperature(), 19)
+        self.assertEqual(self.device.getCircuit(0).getTargetTemperature(), 18)

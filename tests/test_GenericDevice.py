@@ -52,3 +52,8 @@ class GenericDeviceTest(unittest.TestCase):
         self.assertEqual(
             self.service.setPropertyData[0]['action'], 'setCurve')
         self.assertEqual(self.service.setPropertyData[0]['data'], {'shift': -2, 'slope': 0.9})
+
+    def test_get_target_temperature_static(self):
+        # self.device.circuits[0] is an instance of HeatingCircuit
+        # created by HeatingDevice based on MockCircuitsData
+        self.assertEqual(self.device.circuits[0].getTargetTemperature(), 18)
